@@ -1,0 +1,135 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>即刻目录</title>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@900&family=VT323&family=Space+Mono&family=Inter:wght@300;500&display=swap"
+        rel="stylesheet">
+    <link rel="stylesheet" href="css/style.css">
+</head>
+
+<body>
+    <div class="container" id="app">
+        <header class="app-header">
+            <h1 class="logo display-text">即刻目录</h1>
+            <div class="status-indicator">
+                <span class="led-red" id="statusLed"></span>
+                <span id="statusText">SYS_READY</span>
+            </div>
+        </header>
+
+        <main>
+            <details class="glass-card config-panel" style="margin-bottom: 64px;">
+                <summary class="display-text">大模型配置 (SETTINGS)</summary>
+                <div class="workspace-grid mt-4">
+                    <div class="input-group">
+                        <label>API_BASE_URL (OpenAI 兼容)</label>
+                        <input type="text" id="apiBase" class="input-pure" placeholder="https://api.openai.com/v1">
+                    </div>
+                    <div class="input-group">
+                        <label>API_KEY</label>
+                        <input type="password" id="apiKey" class="input-pure" placeholder="sk-...">
+                    </div>
+                    <div class="input-group">
+                        <label>MODEL_NAME (需支持 Vision)</label>
+                        <input type="text" id="modelName" class="input-pure" placeholder="gpt-4o-mini">
+                    </div>
+                    <div style="display:flex; align-items:flex-end;">
+                        <button class="btn btn-ghost" style="width:100%" id="saveConfigBtn">保存配置</button>
+                    </div>
+                </div>
+            </details>
+
+            <div>
+                <div class="section-title">
+                    <span class="dot-number display-text">01</span>
+                    <span class="display-text">文件输入 (SOURCE)</span>
+                </div>
+
+                <div class="file-drop-area ghost-card" id="dropArea">
+                    <span class="blinking-cursor">> 拖拽 PDF 到这里_</span>
+                    <input type="file" id="pdfFileInput" accept="application/pdf">
+                    <div id="pdfInfo" class="hidden mt-4 text-sm" style="font-family: var(--font-body)">
+                        文件：<span id="fileName" style="font-weight: 500"></span><br>
+                        总页数：<span id="filePages" style="font-weight: 500"></span>
+                    </div>
+                </div>
+
+                <div class="controls-grid">
+                    <div class="input-group">
+                        <label>开始提取页</label>
+                        <input type="number" id="startPage" class="lcd-input" min="1" value="1" disabled>
+                    </div>
+                    <div class="input-group">
+                        <label>结束提取页</label>
+                        <input type="number" id="endPage" class="lcd-input" min="1" value="1" disabled>
+                    </div>
+                    <div class="input-group">
+                        <label>目录起始页（目录第1页对应PDF第几页）</label>
+                        <input type="number" id="baseOffset" class="lcd-input" min="1" value="1">
+                    </div>
+                </div>
+
+                <div class="action-grid" style="margin-bottom: 64px;">
+                    <button class="btn btn-ghost" id="renderBtn" disabled>1. 加载页面</button>
+                    <button class="btn btn-primary" id="recognizeBtn" disabled>2. AI 识别目录</button>
+                    <button class="btn btn-primary" id="generatePdfBtn" disabled>3. 生成最终 PDF</button>
+                </div>
+            </div>
+
+            <div>
+                <div class="section-title">
+                    <span class="dot-number display-text">02</span>
+                    <span class="display-text">工作区 (WORKSPACE)</span>
+                </div>
+
+                <div class="workspace-grid">
+                    <div>
+                        <div class="input-group">
+                            <label>页面预览</label>
+                            <div id="previewContainer" class="preview-container glass-card">
+                                <div id="previewContent"></div>
+                            </div>
+                        </div>
+                    </div>
+                    <div>
+                        <div class="input-group">
+                            <label>纯文本目录校对与映射</label>
+                            <textarea id="tocEditor" class="terminal-editor"
+                                placeholder="// 等待识别结果...&#10;// 结构说明：&#10;// [标题] [页码]&#10;//     [子标题] [页码]&#10;// --- OFFSET: [局部偏移量] ---"
+                                spellcheck="false"></textarea>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div style="margin-top: 64px;">
+                <details class="glass-card config-panel" style="border-bottom:none;">
+                    <summary class="display-text" style="border-bottom:none;">附加工具：PDF 精确拆分 (UTILS)</summary>
+                    <div class="workspace-grid mt-4">
+                        <div class="input-group">
+                            <label>提取起始页码（绝对页）</label>
+                            <input type="number" id="splitStart" class="input-pure" min="1" value="1" disabled>
+                        </div>
+                        <div class="input-group">
+                            <label>提取结束页码（绝对页）</label>
+                            <input type="number" id="splitEnd" class="input-pure" min="1" value="1" disabled>
+                        </div>
+                        <div style="grid-column: 1 / -1; display:flex;">
+                            <button class="btn btn-ghost" id="splitBtn" disabled style="width: 100%">提取页面</button>
+                        </div>
+                    </div>
+                </details>
+            </div>
+        </main>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <script>pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';</script>
+    <script src="js/app.js"></script>
+</body>
+
+</html>
