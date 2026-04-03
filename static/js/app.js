@@ -1,6 +1,7 @@
-﻿const CONFIG_KEYS = ['apiBase', 'apiKey', 'modelName'];
-let currentPdf = null;
-let currentFile = null;
+const CONFIG_KEYS = ['apiBase', 'apiKey', 'modelName'];
+let currentFileId = null;
+let currentFileName = null;
+let totalPages = 0;
 
 const APP_PREFIX = (() => {
     const marker = '/static/';
@@ -78,66 +79,81 @@ function saveConfig() {
     }, 2000);
 }
 
-function handlePdfFile(file) {
+async function handlePdfFile(file) {
     if (file.type !== 'application/pdf') {
         alert('错误：仅支持 PDF 文件。');
         return;
     }
 
-    currentFile = file;
+    currentFileName = file.name;
     document.getElementById('pdfInfo').classList.remove('hidden');
     document.getElementById('fileName').innerText = file.name;
-    document.getElementById('filePages').innerText = '加载中...';
+    document.getElementById('filePages').innerText = '上传中...';
+    document.getElementById('renderBtn').innerText = '[ 1. 加载页面 ]';
 
-    const fileReader = new FileReader();
-    fileReader.onload = async function () {
-        const typedarray = new Uint8Array(this.result);
-        try {
-            currentPdf = await pdfjsLib.getDocument(typedarray).promise;
-            document.getElementById('filePages').innerText = currentPdf.numPages;
-            console.log(`[文件] 已加载 ${file.name} - 共 ${currentPdf.numPages} 页`);
+    try {
+        const formData = new FormData();
+        formData.append('file', file);
 
-            const startInput = document.getElementById('startPage');
-            const endInput = document.getElementById('endPage');
-            const renderBtn = document.getElementById('renderBtn');
-            const recognizeBtn = document.getElementById('recognizeBtn');
-            const generatePdfBtn = document.getElementById('generatePdfBtn');
-            const splitStart = document.getElementById('splitStart');
-            const splitEnd = document.getElementById('splitEnd');
-            const splitBtn = document.getElementById('splitBtn');
+        const response = await fetch(withPrefix('/api/upload'), {
+            method: 'POST',
+            body: formData
+        });
+        const data = await response.json();
 
-            startInput.disabled = false;
-            endInput.disabled = false;
-            renderBtn.disabled = false;
-            recognizeBtn.disabled = false;
-            generatePdfBtn.disabled = false;
-            splitStart.disabled = false;
-            splitEnd.disabled = false;
-            splitBtn.disabled = false;
-
-            startInput.max = currentPdf.numPages;
-            endInput.max = currentPdf.numPages;
-            splitStart.max = currentPdf.numPages;
-            splitEnd.max = currentPdf.numPages;
-
-            startInput.value = 1;
-            endInput.value = Math.min(3, currentPdf.numPages);
-            splitStart.value = 1;
-            splitEnd.value = currentPdf.numPages;
-
-            renderSelectedPages();
-        } catch (err) {
-            console.error('[错误] PDF 解析失败', err);
-            document.getElementById('filePages').innerText = '解析失败';
-            currentPdf = null;
+        if (data.status !== 'ok') {
+            document.getElementById('filePages').innerText = '上传失败';
+            console.error('[错误] 上传失败:', data);
+            return;
         }
-    };
 
-    fileReader.readAsArrayBuffer(file);
+        currentFileId = data.file_id;
+        totalPages = data.pages;
+        document.getElementById('filePages').innerText = `${totalPages} 页`;
+        console.log(`[文件] 已上传 ${file.name} - 共 ${totalPages} 页，ID: ${currentFileId}`);
+
+        const startInput = document.getElementById('startPage');
+        const endInput = document.getElementById('endPage');
+        const renderBtn = document.getElementById('renderBtn');
+        const recognizeBtn = document.getElementById('recognizeBtn');
+        const generatePdfBtn = document.getElementById('generatePdfBtn');
+        const splitStart = document.getElementById('splitStart');
+        const splitEnd = document.getElementById('splitEnd');
+        const splitBtn = document.getElementById('splitBtn');
+
+        startInput.disabled = false;
+        endInput.disabled = false;
+        renderBtn.disabled = false;
+        recognizeBtn.disabled = false;
+        generatePdfBtn.disabled = false;
+        splitStart.disabled = false;
+        splitEnd.disabled = false;
+        splitBtn.disabled = false;
+
+        const compressBtn = document.getElementById('compressBtn');
+        const compressQuality = document.getElementById('compressQuality');
+        compressBtn.disabled = false;
+        compressQuality.disabled = false;
+
+        startInput.max = totalPages;
+        endInput.max = totalPages;
+        splitStart.max = totalPages;
+        splitEnd.max = totalPages;
+
+        startInput.value = 1;
+        endInput.value = Math.min(3, totalPages);
+        splitStart.value = 1;
+        splitEnd.value = totalPages;
+
+        renderSelectedPages();
+    } catch (err) {
+        console.error('[错误] 上传失败', err);
+        document.getElementById('filePages').innerText = '上传失败';
+    }
 }
 
 async function renderSelectedPages() {
-    if (!currentPdf) return;
+    if (!currentFileId) return;
 
     const startObj = document.getElementById('startPage');
     const endObj = document.getElementById('endPage');
@@ -154,24 +170,22 @@ async function renderSelectedPages() {
     }
 
     if (start < 1) start = 1;
-    if (end > currentPdf.numPages) end = currentPdf.numPages;
+    if (end > totalPages) end = totalPages;
 
     const previewBox = document.getElementById('previewContent');
     previewBox.innerHTML = '';
     console.log(`[系统] 正在渲染第 ${start} 到 ${end} 页`);
 
     for (let i = start; i <= end; i++) {
-        const page = await currentPdf.getPage(i);
-        const viewport = page.getViewport({ scale: 1.5 });
-
-        const canvas = document.createElement('canvas');
-        canvas.dataset.page = i;
-        const context = canvas.getContext('2d');
-        canvas.height = viewport.height;
-        canvas.width = viewport.width;
-
-        await page.render({ canvasContext: context, viewport }).promise;
-        previewBox.appendChild(canvas);
+        const img = document.createElement('img');
+        img.dataset.page = i;
+        img.src = withPrefix(`/api/page/${currentFileId}/${i}`);
+        img.alt = `Page ${i}`;
+        img.loading = 'lazy';
+        img.style.width = '100%';
+        img.style.height = 'auto';
+        img.style.filter = 'grayscale(100%) contrast(1.1)';
+        previewBox.appendChild(img);
     }
 }
 
@@ -188,17 +202,44 @@ document.getElementById('recognizeBtn').addEventListener('click', async () => {
         return;
     }
 
-    const canvases = document.querySelectorAll('#previewContent canvas');
-    if (canvases.length === 0) {
+    const images = document.querySelectorAll('#previewContent img[data-page]');
+    if (images.length === 0) {
         alert('错误：没有可识别的预览页面。');
         return;
     }
 
-    const imagesBase64 = Array.from(canvases).map(c => c.toDataURL('image/jpeg', 0.8));
-
     btn.innerText = '[ 识别中... ]';
     btn.disabled = true;
     editor.value = '// 请稍候，正在发送页面到模型...\n';
+
+    // Convert each server-rendered image to base64 via offscreen canvas
+    const imagesBase64 = [];
+    for (const img of images) {
+        try {
+            // Wait for image to load if not already
+            if (!img.complete || img.naturalWidth === 0) {
+                await new Promise((resolve) => { img.onload = resolve; img.onerror = resolve; });
+            }
+            const canvas = document.createElement('canvas');
+            canvas.width = img.naturalWidth;
+            canvas.height = img.naturalHeight;
+            const ctx = canvas.getContext('2d');
+            // Apply the same grayscale+contrast filter
+            ctx.filter = getComputedStyle(img).filter || 'none';
+            ctx.drawImage(img, 0, 0, img.naturalWidth, img.naturalHeight);
+            const base64 = canvas.toDataURL('image/jpeg', 0.8);
+            imagesBase64.push(base64);
+        } catch (err) {
+            console.error(`[错误] 图片 ${img.dataset.page} 转换失败:`, err);
+        }
+    }
+
+    if (imagesBase64.length === 0) {
+        editor.value = '// 失败：无法将预览页转为 base64\n';
+        btn.disabled = false;
+        btn.innerText = '[ 2. AI 识别目录 ]';
+        return;
+    }
 
     try {
         const response = await fetch(withPrefix('/api/recognize'), {
@@ -232,7 +273,7 @@ document.getElementById('recognizeBtn').addEventListener('click', async () => {
 });
 
 document.getElementById('generatePdfBtn').addEventListener('click', async () => {
-    if (!currentFile) {
+    if (!currentFileId) {
         alert('错误：请先上传 PDF。');
         return;
     }
@@ -251,10 +292,9 @@ document.getElementById('generatePdfBtn').addEventListener('click', async () => 
     btn.disabled = true;
 
     const formData = new FormData();
-    formData.append('file', currentFile);
+    formData.append('file_id', currentFileId);
     formData.append('toc_text', tocText);
     formData.append('toc_start_page', String(tocStartPage));
-    // Backward compatibility for old server versions.
     formData.append('base_offset', String(tocStartPage - 1));
 
     try {
@@ -279,7 +319,7 @@ document.getElementById('generatePdfBtn').addEventListener('click', async () => 
         if (contentType.includes('application/json')) {
             const data = await response.json();
             if (data.status === 'error') {
-                throw new Error(data.message || '后端返回错误');
+                throw new Error(data.message || '后端返回了错误');
             }
             throw new Error('后端返回了 JSON，而不是 PDF 文件');
         }
@@ -289,7 +329,7 @@ document.getElementById('generatePdfBtn').addEventListener('click', async () => 
         const a = document.createElement('a');
         a.style.display = 'none';
         a.href = url;
-        a.download = `目录_${currentFile.name}`;
+        a.download = `目录_${currentFileName}`;
         document.body.appendChild(a);
         a.click();
         window.URL.revokeObjectURL(url);
@@ -303,7 +343,7 @@ document.getElementById('generatePdfBtn').addEventListener('click', async () => 
 });
 
 document.getElementById('splitBtn').addEventListener('click', async () => {
-    if (!currentFile) {
+    if (!currentFileId) {
         alert('错误：请先上传 PDF。');
         return;
     }
@@ -316,7 +356,7 @@ document.getElementById('splitBtn').addEventListener('click', async () => {
     btn.disabled = true;
 
     const formData = new FormData();
-    formData.append('file', currentFile);
+    formData.append('file_id', currentFileId);
     formData.append('start_page', startPage);
     formData.append('end_page', endPage);
 
@@ -342,7 +382,7 @@ document.getElementById('splitBtn').addEventListener('click', async () => {
         if (contentType.includes('application/json')) {
             const data = await response.json();
             if (data.status === 'error') {
-                throw new Error(data.message || '后端返回错误');
+                throw new Error(data.message || '后端返回了错误');
             }
             throw new Error('后端返回了 JSON，而不是 PDF 文件');
         }
@@ -352,7 +392,7 @@ document.getElementById('splitBtn').addEventListener('click', async () => {
         const a = document.createElement('a');
         a.style.display = 'none';
         a.href = url;
-        a.download = `拆分_${startPage}_${endPage}_${currentFile.name}`;
+        a.download = `拆分_${startPage}_${endPage}_${currentFileName}`;
         document.body.appendChild(a);
         a.click();
         window.URL.revokeObjectURL(url);
@@ -361,6 +401,87 @@ document.getElementById('splitBtn').addEventListener('click', async () => {
         alert(`错误：提取页面失败。\n${err.message || err}`);
     } finally {
         btn.innerText = '[ 提取页面 ]';
+        btn.disabled = false;
+    }
+});
+
+document.getElementById('compressQuality').addEventListener('input', (e) => {
+    document.getElementById('qualityValue').textContent = e.target.value;
+});
+
+function formatSize(bytes) {
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+    return (bytes / (1024 * 1024)).toFixed(2) + ' MB';
+}
+
+document.getElementById('compressBtn').addEventListener('click', async () => {
+    if (!currentFileId) {
+        alert('错误：请先上传 PDF。');
+        return;
+    }
+
+    const quality = document.getElementById('compressQuality').value;
+    const btn = document.getElementById('compressBtn');
+    const resultSpan = document.getElementById('compressResult');
+
+    btn.innerText = '[ 压缩中... ]';
+    btn.disabled = true;
+    resultSpan.textContent = '';
+
+    const formData = new FormData();
+    formData.append('file_id', currentFileId);
+    formData.append('image_quality', quality);
+
+    try {
+        const response = await fetch(withPrefix('/api/compress_pdf'), {
+            method: 'POST',
+            body: formData
+        });
+
+        const contentType = response.headers.get('content-type') || '';
+        if (!response.ok) {
+            const text = await response.text();
+            let message = `HTTP ${response.status}`;
+            try {
+                const data = JSON.parse(text);
+                message = data.message ? `${message} - ${data.message}` : `${message} - ${text}`;
+            } catch {
+                message = `${message} - ${text}`;
+            }
+            throw new Error(message.slice(0, 400));
+        }
+
+        if (contentType.includes('application/json')) {
+            const data = await response.json();
+            if (data.status === 'error') {
+                throw new Error(data.message || '后端返回了错误');
+            }
+            throw new Error('后端返回了 JSON，而不是 PDF 文件');
+        }
+
+        const originalSize = parseInt(response.headers.get('X-Original-Size') || '0', 10);
+        const compressedSize = parseInt(response.headers.get('X-Compressed-Size') || '0', 10);
+
+        if (originalSize && compressedSize) {
+            const ratio = ((1 - compressedSize / originalSize) * 100).toFixed(1);
+            resultSpan.textContent = `${formatSize(originalSize)} → ${formatSize(compressedSize)}（减少 ${ratio}%）`;
+        }
+
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.style.display = 'none';
+        a.href = url;
+        a.download = `压缩_${currentFileName}`;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+    } catch (err) {
+        console.error('[错误]', err);
+        alert(`错误：压缩 PDF 失败。\n${err.message || err}`);
+    } finally {
+        btn.innerText = '[ 压缩 PDF ]';
         btn.disabled = false;
     }
 });

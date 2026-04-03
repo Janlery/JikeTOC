@@ -421,10 +421,10 @@ details[open] summary {
     align-items: center;
 }
 
-.preview-container canvas {
+.preview-container canvas,
+.preview-container img {
     width: 100%;
     height: auto;
-    /* Remove green tint; keep monochromatic */
     filter: grayscale(100%) contrast(1.1);
 }
 

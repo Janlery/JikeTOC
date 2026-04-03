@@ -12,8 +12,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 # Expose port (Zeabur expects the web service to bind to a port, usually 8080 or the PORT env var)
-ENV PORT="8080"
-EXPOSE 8080
+ENV PORT="5060"
+EXPOSE 5060
 
 # Run Uvicorn
 CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port ${PORT}"]

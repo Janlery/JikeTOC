@@ -123,12 +123,24 @@
                         </div>
                     </div>
                 </details>
+
+                <details class="glass-card config-panel" style="border-bottom:none; margin-top: 16px;">
+                    <summary class="display-text" style="border-bottom:none;">附加工具：PDF 压缩 (COMPRESS)</summary>
+                    <div class="workspace-grid mt-4">
+                        <div class="input-group" style="grid-column: 1 / -1;">
+                            <label>图片质量 (10-100，越低压缩越大)：<span id="qualityValue">80</span></label>
+                            <input type="range" id="compressQuality" min="10" max="100" value="80" style="width:100%" disabled>
+                        </div>
+                        <div style="grid-column: 1 / -1; display:flex; align-items: center; gap: 16px;">
+                            <button class="btn btn-ghost" id="compressBtn" disabled style="flex:1">压缩 PDF</button>
+                            <span id="compressResult" class="text-sm" style="font-family: var(--font-body); opacity: 0.7;"></span>
+                        </div>
+                    </div>
+                </details>
             </div>
         </main>
     </div>
 
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-    <script>pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';</script>
     <script src="js/app.js"></script>
 </body>
 

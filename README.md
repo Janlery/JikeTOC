@@ -39,7 +39,7 @@ python main.py
 3. 浏览器访问：
 
 ```text
-http://127.0.0.1:8080
+http://127.0.0.1:5060
 ```
 
 ## Docker 启动
@@ -53,7 +53,7 @@ docker build -t jike-toc .
 2. 运行容器：
 
 ```bash
-docker run -p 8080:8080 jike-toc
+docker run -p 5060:5060 jike-toc
 ```
 
 ## 使用方法
