@@ -128,8 +128,14 @@
                     <summary class="display-text" style="border-bottom:none;">附加工具：PDF 压缩 (COMPRESS)</summary>
                     <div class="workspace-grid mt-4">
                         <div class="input-group" style="grid-column: 1 / -1;">
-                            <label>图片质量 (10-100，越低压缩越大)：<span id="qualityValue">80</span></label>
-                            <input type="range" id="compressQuality" min="10" max="100" value="80" style="width:100%" disabled>
+                            <label>压缩级别</label>
+                            <select id="compressQuality" disabled style="width:100%; padding:8px; font-family: var(--font-body); font-size: 13px; border: 1px solid var(--border-color); background: transparent; border-radius: 3px; outline: none;">
+                                <option value="1">1 - 轻微压缩（保留最高画质）</option>
+                                <option value="3">3 - 适中压缩</option>
+                                <option value="5" selected>5 - 推荐压缩（平衡画质与体积）</option>
+                                <option value="7">7 - 激进压缩（明显画质损失）</option>
+                                <option value="9">9 - 极致压缩（最大体积缩减）</option>
+                            </select>
                         </div>
                         <div style="grid-column: 1 / -1; display:flex; align-items: center; gap: 16px;">
                             <button class="btn btn-ghost" id="compressBtn" disabled style="flex:1">压缩 PDF</button>

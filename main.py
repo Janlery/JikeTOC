@@ -255,11 +255,26 @@ async def split_pdf(
                 pass
 
 
+# Stirling-PDF style compression level mapping
+OPTIMIZE_LEVELS = {
+    1: {"scale": 0.98, "jpeg_quality": 92, "label": "轻微"},
+    2: {"scale": 0.95, "jpeg_quality": 88, "label": "较轻"},
+    3: {"scale": 0.88, "jpeg_quality": 85, "label": "适中"},
+    4: {"scale": 0.78, "jpeg_quality": 80, "label": "标准"},
+    5: {"scale": 0.68, "jpeg_quality": 72, "label": "推荐"},
+    6: {"scale": 0.58, "jpeg_quality": 65, "label": "较强"},
+    7: {"scale": 0.48, "jpeg_quality": 55, "label": "激进"},
+    8: {"scale": 0.38, "jpeg_quality": 45, "label": "极强"},
+    9: {"scale": 0.28, "jpeg_quality": 35, "label": "极致"},
+}
+MIN_DIM = 400
+
+
 @app.post("/api/compress_pdf")
 async def compress_pdf(
     file: UploadFile = File(None),
     file_id: Optional[str] = Form(None),
-    image_quality: int = Form(80)
+    optimize_level: int = Form(5)
 ):
     tmp_source = None
     try:
@@ -275,12 +290,15 @@ async def compress_pdf(
         else:
             return {"status": "error", "message": "No file provided"}
 
+        # Clamp level
+        optimize_level = max(1, min(9, optimize_level))
+        level_config = OPTIMIZE_LEVELS[optimize_level]
+        scale_factor = level_config["scale"]
+        jpeg_quality = level_config["jpeg_quality"]
+
         doc = fitz.open(source_path)
         original_size = os.path.getsize(source_path)
 
-        image_quality = max(10, min(100, image_quality))
-
-        # Track processed xrefs to avoid re-processing same image
         processed = set()
         for page in doc:
             for img in page.get_images(full=True):
@@ -292,44 +310,75 @@ async def compress_pdf(
                     base_image = doc.extract_image(xref)
                     if not base_image or not base_image["image"]:
                         continue
+                    img_bytes = base_image["image"]
                     ext = base_image.get("ext", "")
                     # Skip non-raster images (JBIG2, etc.)
                     if ext in ("jb2",):
                         continue
-                    img_bytes = base_image["image"]
-                    # Only compress images larger than 50KB that are JPEG or PNG
-                    if len(img_bytes) < 50 * 1024 and ext not in ("jpeg", "jpg", "png"):
-                        continue
                     pil_img = Image.open(io.BytesIO(img_bytes))
-                    # Skip tiny images (likely icons/spacers)
                     w, h = pil_img.size
+
+                    # Skip tiny images (icons, spacers)
                     if w * h < 10000:
                         continue
-                    if pil_img.mode not in ("RGB", "RGBA", "L", "P"):
-                        continue
+
+                    # Handle color modes
+                    has_alpha = False
                     if pil_img.mode == "RGBA":
-                        # Check if alpha channel is actually used
-                        if pil_img.mode == "RGBA":
-                            alpha = pil_img.getchannel("A")
-                            if alpha.getextrema() == (255, 255):
-                                pil_img = pil_img.convert("RGB")
-                            else:
-                                continue  # Skip images with real transparency
-                    if pil_img.mode == "P":
+                        alpha = pil_img.getchannel("A")
+                        if alpha.getextrema() != (255, 255):
+                            # Real transparency — save as PNG, only compress if smaller
+                            has_alpha = True
+                        else:
+                            pil_img = pil_img.convert("RGB")
+                    elif pil_img.mode == "P":
+                        # Check if palette has alpha
+                        if "transparency" in pil_img.info:
+                            has_alpha = True
+                        else:
+                            pil_img = pil_img.convert("RGB")
+                    elif pil_img.mode == "L":
                         pil_img = pil_img.convert("RGB")
-                    if pil_img.mode == "L":
-                        pil_img = pil_img.convert("RGB")
-                    # Compress to JPEG
+                    elif pil_img.mode not in ("RGB", "RGBA"):
+                        continue
+
+                    # Adaptive scale factor (Stirling-PDF style)
+                    adjusted_scale = scale_factor
+                    if w > 3000 or h > 3000:
+                        adjusted_scale = min(adjusted_scale, 0.75)
+                    if w < 1000 and h < 1000:
+                        adjusted_scale = max(adjusted_scale, 0.9)
+
+                    # Compute new dimensions
+                    new_w = max(MIN_DIM, int(w * adjusted_scale))
+                    new_h = max(MIN_DIM, int(h * adjusted_scale))
+
+                    # Skip if change is negligible (< 5%) and not forced
+                    if new_w / w > 0.95 and new_h / h > 0.95 and not has_alpha:
+                        # Even if skip resize, try JPEG re-encode for large images
+                        if len(img_bytes) < 50 * 1024:
+                            continue
+                        buf = io.BytesIO()
+                        pil_img.save(buf, format="JPEG", quality=jpeg_quality, optimize=True)
+                        buf.seek(0)
+                        if buf.getbuffer().nbytes < len(img_bytes):
+                            doc.insert_image(fitz.Point(0, 0), stream=buf.getvalue(), xref=xref)
+                        continue
+
+                    # Resize image
+                    pil_img = pil_img.resize((new_w, new_h), Image.LANCZOS)
+
+                    # Encode to bytes
                     buf = io.BytesIO()
-                    pil_img.save(buf, format="JPEG", quality=image_quality, optimize=True)
+                    if has_alpha:
+                        pil_img.save(buf, format="PNG", optimize=True)
+                    else:
+                        pil_img.save(buf, format="JPEG", quality=jpeg_quality, optimize=True)
                     buf.seek(0)
-                    # Only replace if the compressed version is actually smaller
+
+                    # Only replace if compressed version is smaller
                     if buf.getbuffer().nbytes < len(img_bytes):
-                        doc.insert_image(
-                            fitz.Point(0, 0),
-                            stream=buf.getvalue(),
-                            xref=xref,
-                        )
+                        doc.insert_image(fitz.Point(0, 0), stream=buf.getvalue(), xref=xref)
                 except Exception:
                     continue
 

@@ -405,10 +405,6 @@ document.getElementById('splitBtn').addEventListener('click', async () => {
     }
 });
 
-document.getElementById('compressQuality').addEventListener('input', (e) => {
-    document.getElementById('qualityValue').textContent = e.target.value;
-});
-
 function formatSize(bytes) {
     if (bytes < 1024) return bytes + ' B';
     if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
@@ -421,7 +417,7 @@ document.getElementById('compressBtn').addEventListener('click', async () => {
         return;
     }
 
-    const quality = document.getElementById('compressQuality').value;
+    const optimizeLevel = document.getElementById('compressQuality').value;
     const btn = document.getElementById('compressBtn');
     const resultSpan = document.getElementById('compressResult');
 
@@ -431,7 +427,7 @@ document.getElementById('compressBtn').addEventListener('click', async () => {
 
     const formData = new FormData();
     formData.append('file_id', currentFileId);
-    formData.append('image_quality', quality);
+    formData.append('optimize_level', optimizeLevel);
 
     try {
         const response = await fetch(withPrefix('/api/compress_pdf'), {
