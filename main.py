@@ -294,7 +294,7 @@ async def compress_pdf(
                     pil_img.save(buf, format="JPEG", quality=image_quality, optimize=True)
                     buf.seek(0)
                     doc.insert_image(
-                        page.rect,
+                        fitz.Point(0, 0),
                         stream=buf.getvalue(),
                         xref=xref,
                     )
