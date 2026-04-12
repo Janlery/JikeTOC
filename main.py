@@ -280,24 +280,56 @@ async def compress_pdf(
 
         image_quality = max(10, min(100, image_quality))
 
+        # Track processed xrefs to avoid re-processing same image
+        processed = set()
         for page in doc:
             for img in page.get_images(full=True):
                 xref = img[0]
+                if xref in processed:
+                    continue
+                processed.add(xref)
                 try:
                     base_image = doc.extract_image(xref)
                     if not base_image or not base_image["image"]:
                         continue
-                    pil_img = Image.open(io.BytesIO(base_image["image"]))
-                    if pil_img.mode in ("RGBA", "P"):
+                    ext = base_image.get("ext", "")
+                    # Skip non-raster images (JBIG2, etc.)
+                    if ext in ("jb2",):
+                        continue
+                    img_bytes = base_image["image"]
+                    # Only compress images larger than 50KB that are JPEG or PNG
+                    if len(img_bytes) < 50 * 1024 and ext not in ("jpeg", "jpg", "png"):
+                        continue
+                    pil_img = Image.open(io.BytesIO(img_bytes))
+                    # Skip tiny images (likely icons/spacers)
+                    w, h = pil_img.size
+                    if w * h < 10000:
+                        continue
+                    if pil_img.mode not in ("RGB", "RGBA", "L", "P"):
+                        continue
+                    if pil_img.mode == "RGBA":
+                        # Check if alpha channel is actually used
+                        if pil_img.mode == "RGBA":
+                            alpha = pil_img.getchannel("A")
+                            if alpha.getextrema() == (255, 255):
+                                pil_img = pil_img.convert("RGB")
+                            else:
+                                continue  # Skip images with real transparency
+                    if pil_img.mode == "P":
                         pil_img = pil_img.convert("RGB")
+                    if pil_img.mode == "L":
+                        pil_img = pil_img.convert("RGB")
+                    # Compress to JPEG
                     buf = io.BytesIO()
                     pil_img.save(buf, format="JPEG", quality=image_quality, optimize=True)
                     buf.seek(0)
-                    doc.insert_image(
-                        fitz.Point(0, 0),
-                        stream=buf.getvalue(),
-                        xref=xref,
-                    )
+                    # Only replace if the compressed version is actually smaller
+                    if buf.getbuffer().nbytes < len(img_bytes):
+                        doc.insert_image(
+                            fitz.Point(0, 0),
+                            stream=buf.getvalue(),
+                            xref=xref,
+                        )
                 except Exception:
                     continue
 
