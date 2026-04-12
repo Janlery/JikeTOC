@@ -293,12 +293,11 @@ async def compress_pdf(
                     buf = io.BytesIO()
                     pil_img.save(buf, format="JPEG", quality=image_quality, optimize=True)
                     buf.seek(0)
-                    new_img = fitz.open(stream=buf.read(), filetype="jpeg")
-                    rect = page.get_image_rects(xref)
-                    if rect:
-                        page.delete_image(xref)
-                        page.insert_image(rect[0], stream=new_img.tobytes())
-                        new_img.close()
+                    doc.insert_image(
+                        page.rect,
+                        stream=buf.getvalue(),
+                        xref=xref,
+                    )
                 except Exception:
                     continue
 
