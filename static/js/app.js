@@ -468,6 +468,9 @@ document.getElementById('compressBtn').addEventListener('click', async () => {
             resultSpan.textContent = `${formatSize(originalSize)} → ${formatSize(compressedSize)}（减少 ${ratio}%）`;
         }
 
+        btn.innerText = '[ 下载中... ]';
+        btn.disabled = true;
+
         const blob = await response.blob();
         const url = window.URL.createObjectURL(blob);
         const a = document.createElement('a');

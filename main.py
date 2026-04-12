@@ -302,7 +302,7 @@ async def compress_pdf(
                     continue
 
         out_pdf = io.BytesIO()
-        doc.save(out_pdf, deflate=True, garbage=4, clean=True)
+        doc.save(out_pdf, deflate=True, garbage=3, clean=True)
         doc.close()
         out_pdf.seek(0)
         compressed_size = out_pdf.getbuffer().nbytes
