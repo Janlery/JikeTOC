@@ -6,7 +6,6 @@ import time
 import shutil
 import fitz
 import requests
-from PIL import Image
 from urllib.parse import quote
 from pydantic import BaseModel
 from typing import List, Optional
@@ -257,17 +256,12 @@ async def split_pdf(
 
 # Stirling-PDF style compression level mapping
 OPTIMIZE_LEVELS = {
-    1: {"scale": 0.98, "jpeg_quality": 92, "label": "轻微"},
-    2: {"scale": 0.95, "jpeg_quality": 88, "label": "较轻"},
-    3: {"scale": 0.88, "jpeg_quality": 85, "label": "适中"},
-    4: {"scale": 0.78, "jpeg_quality": 80, "label": "标准"},
-    5: {"scale": 0.68, "jpeg_quality": 72, "label": "推荐"},
-    6: {"scale": 0.58, "jpeg_quality": 65, "label": "较强"},
-    7: {"scale": 0.48, "jpeg_quality": 55, "label": "激进"},
-    8: {"scale": 0.38, "jpeg_quality": 45, "label": "极强"},
-    9: {"scale": 0.28, "jpeg_quality": 35, "label": "极致"},
+    1: {"dpi": 150, "jpeg_quality": 92, "label": "轻微"},
+    3: {"dpi": 120, "jpeg_quality": 85, "label": "适中"},
+    5: {"dpi": 100, "jpeg_quality": 72, "label": "推荐"},
+    7: {"dpi": 72, "jpeg_quality": 55, "label": "激进"},
+    9: {"dpi": 50, "jpeg_quality": 35, "label": "极致"},
 }
-MIN_DIM = 400
 
 
 @app.post("/api/compress_pdf")
@@ -293,98 +287,31 @@ async def compress_pdf(
         # Clamp level
         optimize_level = max(1, min(9, optimize_level))
         level_config = OPTIMIZE_LEVELS[optimize_level]
-        scale_factor = level_config["scale"]
+        target_dpi = level_config["dpi"]
         jpeg_quality = level_config["jpeg_quality"]
 
-        doc = fitz.open(source_path)
         original_size = os.path.getsize(source_path)
 
-        processed = set()
-        for page in doc:
-            for img in page.get_images(full=True):
-                xref = img[0]
-                if xref in processed:
-                    continue
-                processed.add(xref)
-                try:
-                    base_image = doc.extract_image(xref)
-                    if not base_image or not base_image["image"]:
-                        continue
-                    img_bytes = base_image["image"]
-                    ext = base_image.get("ext", "")
-                    # Skip non-raster images (JBIG2, etc.)
-                    if ext in ("jb2",):
-                        continue
-                    pil_img = Image.open(io.BytesIO(img_bytes))
-                    w, h = pil_img.size
+        src_doc = fitz.open(source_path)
+        out_doc = fitz.open()
 
-                    # Skip tiny images (icons, spacers)
-                    if w * h < 10000:
-                        continue
+        for page_idx in range(src_doc.page_count):
+            src_page = src_doc[page_idx]
+            # Render page to pixmap at target DPI
+            zoom = target_dpi / 72.0
+            mat = fitz.Matrix(zoom, zoom)
+            pix = src_page.get_pixmap(matrix=mat, alpha=False)
+            img_bytes = pix.tobytes("jpeg", jpeg_quality)
 
-                    # Handle color modes
-                    has_alpha = False
-                    if pil_img.mode == "RGBA":
-                        alpha = pil_img.getchannel("A")
-                        if alpha.getextrema() != (255, 255):
-                            # Real transparency — save as PNG, only compress if smaller
-                            has_alpha = True
-                        else:
-                            pil_img = pil_img.convert("RGB")
-                    elif pil_img.mode == "P":
-                        # Check if palette has alpha
-                        if "transparency" in pil_img.info:
-                            has_alpha = True
-                        else:
-                            pil_img = pil_img.convert("RGB")
-                    elif pil_img.mode == "L":
-                        pil_img = pil_img.convert("RGB")
-                    elif pil_img.mode not in ("RGB", "RGBA"):
-                        continue
-
-                    # Adaptive scale factor (Stirling-PDF style)
-                    adjusted_scale = scale_factor
-                    if w > 3000 or h > 3000:
-                        adjusted_scale = min(adjusted_scale, 0.75)
-                    if w < 1000 and h < 1000:
-                        adjusted_scale = max(adjusted_scale, 0.9)
-
-                    # Compute new dimensions
-                    new_w = max(MIN_DIM, int(w * adjusted_scale))
-                    new_h = max(MIN_DIM, int(h * adjusted_scale))
-
-                    # Skip if change is negligible (< 5%) and not forced
-                    if new_w / w > 0.95 and new_h / h > 0.95 and not has_alpha:
-                        # Even if skip resize, try JPEG re-encode for large images
-                        if len(img_bytes) < 50 * 1024:
-                            continue
-                        buf = io.BytesIO()
-                        pil_img.save(buf, format="JPEG", quality=jpeg_quality, optimize=True)
-                        buf.seek(0)
-                        if buf.getbuffer().nbytes < len(img_bytes):
-                            doc.insert_image(fitz.Point(0, 0), stream=buf.getvalue(), xref=xref)
-                        continue
-
-                    # Resize image
-                    pil_img = pil_img.resize((new_w, new_h), Image.LANCZOS)
-
-                    # Encode to bytes
-                    buf = io.BytesIO()
-                    if has_alpha:
-                        pil_img.save(buf, format="PNG", optimize=True)
-                    else:
-                        pil_img.save(buf, format="JPEG", quality=jpeg_quality, optimize=True)
-                    buf.seek(0)
-
-                    # Only replace if compressed version is smaller
-                    if buf.getbuffer().nbytes < len(img_bytes):
-                        doc.insert_image(fitz.Point(0, 0), stream=buf.getvalue(), xref=xref)
-                except Exception:
-                    continue
+            # Create new page with same dimensions as original
+            new_page = out_doc.new_page(width=src_page.rect.width, height=src_page.rect.height)
+            # Insert the compressed image as full-page content
+            new_page.insert_image(new_page.rect, stream=img_bytes)
 
         out_pdf = io.BytesIO()
-        doc.save(out_pdf, deflate=True, garbage=3, clean=True)
-        doc.close()
+        out_doc.save(out_pdf, deflate=True, garbage=3, clean=True)
+        out_doc.close()
+        src_doc.close()
         out_pdf.seek(0)
         compressed_size = out_pdf.getbuffer().nbytes
 
